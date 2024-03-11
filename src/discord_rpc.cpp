@@ -502,3 +502,324 @@ extern "C" DISCORD_EXPORT void Discord_UpdateHandlers(DiscordEventHandlers* newH
     }
     return;
 }
+
+// the nik api:
+#include <unordered_map>
+#include <queue>
+#include <string>
+
+struct NikDiscord_State : public DiscordRichPresence {
+    std::string sState;
+    std::string sDetails;
+    std::string sLargeImageKey;
+    std::string sLargeImageText;
+    std::string sSmallImageKey;
+    std::string sSmallImageText;
+    std::string sPartyId;
+    std::string sMatchSecret;
+    std::string sJoinSecret;
+    std::string sSpectateSecret;
+    std::string sButtonNames[DISCORD_MAX_BUTTONS];
+    std::string sButtonUrls[DISCORD_MAX_BUTTONS];
+
+    void apply()
+    {
+        state = sState.empty() ? nullptr : sState.c_str();
+        details = sDetails.empty() ? nullptr : sDetails.c_str();
+        largeImageKey = sLargeImageKey.empty() ? nullptr : sLargeImageKey.c_str();
+        largeImageText = sLargeImageText.empty() ? nullptr : sLargeImageText.c_str();
+        smallImageKey = sSmallImageKey.empty() ? nullptr : sSmallImageKey.c_str();
+        smallImageText = sSmallImageText.empty() ? nullptr : sSmallImageText.c_str();
+        partyId = sPartyId.empty() ? nullptr : sPartyId.c_str();
+        matchSecret = sMatchSecret.empty() ? nullptr : sMatchSecret.c_str();
+        joinSecret = sJoinSecret.empty() ? nullptr : sJoinSecret.c_str();
+        spectateSecret = sSpectateSecret.empty() ? nullptr : sSpectateSecret.c_str();
+        for (int b = 0; b < DISCORD_MAX_BUTTONS; ++b) {
+            buttonNames[b] = sButtonNames[b].empty() ? nullptr : sButtonNames[b].c_str();
+            buttonUrls[b] = sButtonUrls[b].empty() ? nullptr : sButtonUrls[b].c_str();
+        }
+    }
+};
+
+static NikDiscord_State g_NikState{};
+static bool g_IsInitialized{false};
+
+static std::mutex g_ApiMutex{};
+#define api_lock() std::lock_guard<std::mutex> guard_(g_ApiMutex)
+
+using NikDiscord_Event = std::unordered_map<std::string, std::string>;
+using NikDiscord_EventQueue = std::queue<NikDiscord_Event>;
+
+static NikDiscord_EventQueue g_EventQueue{};
+static NikDiscord_Event g_CurrentEvent{};
+
+static void NikDiscord_OnReady(const DiscordUser* request)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "ready";
+    ev["userId"] = request->userId ? request->userId : "";
+    ev["username"] = request->username ? request->username : "";
+    ev["discriminator"] = request->discriminator ? request->discriminator : "";
+    ev["avatar"] = request->avatar ? request->avatar : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static void NikDiscord_OnDisconnected(int errorCode, const char* message)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "disconnected";
+    ev["errorCode"] = std::to_string(errorCode);
+    ev["message"] = message ? message : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static void NikDiscord_OnErrored(int errorCode, const char* message)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "errored";
+    ev["errorCode"] = std::to_string(errorCode);
+    ev["message"] = message ? message : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static void NikDiscord_OnJoinGame(const char* joinSecret)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "joinGame";
+    ev["joinSecret"] = joinSecret ? joinSecret : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static void NikDiscord_OnSpectateGame(const char* spectateSecret)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "spectateGame";
+    ev["spectateSecret"] = spectateSecret ? spectateSecret : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static void NikDiscord_OnJoinRequest(const DiscordUser* request)
+{
+    NikDiscord_Event ev;
+    ev["type"] = "joinRequest";
+    ev["userId"] = request->userId ? request->userId : "";
+    ev["username"] = request->username ? request->username : "";
+    ev["discriminator"] = request->discriminator ? request->discriminator : "";
+    ev["avatar"] = request->avatar ? request->avatar : "";
+    g_EventQueue.emplace(std::move(ev));
+}
+
+static DiscordEventHandlers g_NikEventHandlers{NikDiscord_OnReady,
+                                               NikDiscord_OnDisconnected,
+                                               NikDiscord_OnErrored,
+                                               NikDiscord_OnJoinGame,
+                                               NikDiscord_OnSpectateGame,
+                                               NikDiscord_OnJoinRequest};
+
+extern "C" DISCORD_EXPORT void NikDiscord_Initialize(const char* pInApplicationIdString,
+                                                     const char* pInOptionalSteamIdString)
+{
+    api_lock();
+
+    if (g_IsInitialized) {
+        return;
+    }
+
+    g_IsInitialized = true;
+    Discord_Initialize(pInApplicationIdString, &g_NikEventHandlers, 1, pInOptionalSteamIdString);
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_Shutdown(void)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    Discord_ClearPresence();
+    Discord_RunCallbacks(); // one last chance to dispatch any events...
+    Discord_Shutdown();
+    // clear our internal state as well:
+    g_NikState = NikDiscord_State{};
+    g_EventQueue = NikDiscord_EventQueue{};
+    g_CurrentEvent = NikDiscord_Event{};
+    // we're shutdown
+    g_IsInitialized = false;
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_SetPresenceKeyString(NikDiscord_PresenceKey inPresenceKey,
+                                                               const char* pInUtf8String)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    std::string copiedStr;
+    if (pInUtf8String) {
+        // will copy the bytes over...
+        copiedStr = pInUtf8String;
+    } // if this is nullptr, this will be an empty string
+
+    switch (inPresenceKey) {
+    case kPresenceKey_State:
+        g_NikState.sState = copiedStr;
+        break;
+    case kPresenceKey_Details:
+        g_NikState.sDetails = copiedStr;
+        break;
+    case kPresenceKey_LargeImageKey:
+        g_NikState.sLargeImageKey = copiedStr;
+        break;
+    case kPresenceKey_LargeImageText:
+        g_NikState.sLargeImageText = copiedStr;
+        break;
+    case kPresenceKey_SmallImageKey:
+        g_NikState.sSmallImageKey = copiedStr;
+        break;
+    case kPresenceKey_SmallImageText:
+        g_NikState.sSmallImageText = copiedStr;
+        break;
+    case kPresenceKey_PartyId:
+        g_NikState.sPartyId = copiedStr;
+        break;
+    case kPresenceKey_MatchSecret:
+        g_NikState.sMatchSecret = copiedStr;
+        break;
+    case kPresenceKey_JoinSecret:
+        g_NikState.sJoinSecret = copiedStr;
+        break;
+    case kPresenceKey_SpectateSecret:
+        g_NikState.sSpectateSecret = copiedStr;
+        break;
+    case kPresenceKey_ButtonName0:
+        g_NikState.sButtonNames[0] = copiedStr;
+        break;
+    case kPresenceKey_ButtonName1:
+        g_NikState.sButtonNames[1] = copiedStr;
+        break;
+    case kPresenceKey_ButtonUrl0:
+        g_NikState.sButtonUrls[0] = copiedStr;
+        break;
+    case kPresenceKey_ButtonUrl1:
+        g_NikState.sButtonUrls[1] = copiedStr;
+        break;
+    default:
+        break;
+    }
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_SetPresenceKeyInt64(NikDiscord_PresenceKey inPresenceKey,
+                                                              int64_t inValueInt64)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    switch (inPresenceKey) {
+    case kPresenceKey_StartTimestamp:
+        g_NikState.startTimestamp = inValueInt64;
+        break;
+    case kPresenceKey_EndTimestamp:
+        g_NikState.endTimestamp = inValueInt64;
+        break;
+    case kPresenceKey_PartySize:
+        g_NikState.partySize = static_cast<int>(inValueInt64);
+        break;
+    case kPresenceKey_PartyMax:
+        g_NikState.partyMax = static_cast<int>(inValueInt64);
+        break;
+    case kPresenceKey_PartyPrivacy:
+        g_NikState.partyPrivacy = static_cast<int>(inValueInt64);
+        break;
+    case kPresenceKey_Instance:
+        g_NikState.instance = static_cast<int8_t>(inValueInt64);
+        break;
+    default:
+        break;
+    }
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_CommitPresence(int inDoClearPresence)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    if (inDoClearPresence) {
+        g_NikState = NikDiscord_State{};
+        Discord_ClearPresence();
+    }
+    else {
+        g_NikState.apply();
+        Discord_UpdatePresence(&g_NikState);
+    }
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_RunCallbacks(void)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    Discord_RunCallbacks();
+}
+
+extern "C" DISCORD_EXPORT void NikDiscord_Respond(const char* pInUserIdUtf8String, int inReply)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return;
+    }
+
+    Discord_Respond(pInUserIdUtf8String, inReply);
+}
+
+extern "C" DISCORD_EXPORT int NikDiscord_PopEvent(void)
+{
+    api_lock();
+
+    if (!g_IsInitialized) {
+        return 0;
+    }
+
+    if (!g_EventQueue.empty()) {
+        g_CurrentEvent = g_EventQueue.front();
+        g_EventQueue.pop();
+        return 1;
+    }
+
+    return 0;
+}
+
+extern "C" DISCORD_EXPORT const char* NikDiscord_GetEventKey(const char* pInNameUtf8String,
+                                                             int* pOutStringSize)
+{
+    api_lock();
+
+    int strSize = 0;
+    const char* strPtr = nullptr;
+
+    if (g_IsInitialized) {
+        const auto iter = g_CurrentEvent.find(pInNameUtf8String);
+        if (iter != g_CurrentEvent.end()) {
+            strPtr = iter->second.c_str();
+            strSize = static_cast<int>(iter->second.size());
+        }
+    }
+
+    if (pOutStringSize) {
+        *pOutStringSize = strSize;
+    }
+
+    return strPtr;
+}

@@ -168,6 +168,10 @@ def build_lib(build_name, generator, options, just_release):
         initial_cmake = ['cmake', SCRIPT_PATH, '-DCMAKE_INSTALL_PREFIX=%s' % os.path.join('..', 'install', build_name)]
         if generator:
             initial_cmake.extend(['-G', generator])
+            if build_name.startswith('win32-'):
+                initial_cmake.extend(['-A', 'Win32'])
+            elif build_name.startswith('win64-'):
+                initial_cmake.extend(['-A', 'x64'])
         for key in options:
             val = options[key]
             if type(val) is bool:
@@ -279,8 +283,8 @@ def libs(clean, static, shared, skip_formatter, just_release):
         dynamic_options['WARNINGS_AS_ERRORS'] = True
 
     if PLATFORM == 'win':
-        generator32 = 'Visual Studio 14 2015'
-        generator64 = 'Visual Studio 14 2015 Win64'
+        generator32 = 'Visual Studio 16 2019'
+        generator64 = 'Visual Studio 16 2019'
         if static:
             build_lib('win32-static', generator32, static_options, just_release)
             build_lib('win64-static', generator64, static_options, just_release)

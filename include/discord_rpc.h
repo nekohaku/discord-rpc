@@ -42,8 +42,8 @@ typedef struct DiscordRichPresence {
     const char* joinSecret;     /* max 128 bytes */
     const char* spectateSecret; /* max 128 bytes */
     int8_t instance;
-	const char* buttonNames[DISCORD_MAX_BUTTONS]; /* max 2 buttons */
-	const char* buttonUrls[DISCORD_MAX_BUTTONS];  /* max 2 buttons */
+    const char* buttonNames[DISCORD_MAX_BUTTONS]; /* max 2 buttons */
+    const char* buttonUrls[DISCORD_MAX_BUTTONS];  /* max 2 buttons */
 } DiscordRichPresence;
 
 typedef struct DiscordUser {
@@ -88,6 +88,55 @@ DISCORD_EXPORT void Discord_ClearPresence(void);
 DISCORD_EXPORT void Discord_Respond(const char* userid, /* DISCORD_REPLY_ */ int reply);
 
 DISCORD_EXPORT void Discord_UpdateHandlers(DiscordEventHandlers* handlers);
+
+// the nik api:
+typedef enum NikDiscord_PresenceKey {
+    kPresenceKey_First,
+    kPresenceKey_State = kPresenceKey_First,
+    kPresenceKey_Details,
+    kPresenceKey_StartTimestamp,
+    kPresenceKey_EndTimestamp,
+    kPresenceKey_LargeImageKey,
+    kPresenceKey_LargeImageText,
+    kPresenceKey_SmallImageKey,
+    kPresenceKey_SmallImageText,
+    kPresenceKey_PartyId,
+    kPresenceKey_PartySize,
+    kPresenceKey_PartyMax,
+    kPresenceKey_PartyPrivacy,
+    kPresenceKey_MatchSecret,
+    kPresenceKey_JoinSecret,
+    kPresenceKey_SpectateSecret,
+    kPresenceKey_Instance,
+    kPresenceKey_ButtonName0,
+    kPresenceKey_ButtonName1,
+    kPresenceKey_ButtonUrl0,
+    kPresenceKey_ButtonUrl1,
+    kPresenceKey_Last = kPresenceKey_ButtonUrl1,
+    kPresenceKey_ForceInt32 = 65536
+} NikDiscord_PresenceKey;
+
+DISCORD_EXPORT void NikDiscord_Initialize(const char* pInApplicationIdString,
+                                          const char* pInOptionalSteamIdString);
+
+DISCORD_EXPORT void NikDiscord_Shutdown(void);
+
+DISCORD_EXPORT void NikDiscord_RunCallbacks(void);
+
+DISCORD_EXPORT void NikDiscord_SetPresenceKeyString(NikDiscord_PresenceKey inPresenceKey,
+                                                    const char* pInUtf8String);
+
+DISCORD_EXPORT void NikDiscord_SetPresenceKeyInt64(NikDiscord_PresenceKey inPresenceKey,
+                                                   int64_t inValueInt64);
+
+DISCORD_EXPORT void NikDiscord_CommitPresence(int inDoClearPresence);
+
+DISCORD_EXPORT int NikDiscord_PopEvent(void);
+
+DISCORD_EXPORT const char* NikDiscord_GetEventKey(const char* pInNameUtf8String,
+                                                  int* pOutStringSize);
+
+DISCORD_EXPORT void NikDiscord_Respond(const char* pInUserIdUtf8String, int inReply);
 
 #ifdef __cplusplus
 } /* extern "C" */
