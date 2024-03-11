@@ -116,6 +116,25 @@ typedef enum NikDiscord_PresenceKey {
     kPresenceKey_ForceInt32 = 65536
 } NikDiscord_PresenceKey;
 
+typedef enum NikDiscord_EventKey {
+    // required for all
+    kEventKey_Type,
+    // ready, joinRequest
+    kEventKey_UserId,
+    kEventKey_Username,
+    kEventKey_Discriminator,
+    kEventKey_Avatar,
+    // errored,disconnected
+    kEventKey_ErrorCode,
+    kEventKey_Message,
+    // join
+    kEventKey_JoinSecret,
+    // spectate
+    kEventKey_SpectateSecret,
+    // abi crap
+    kEventKey_ForceInt32 = 65536
+} NikDiscord_EventKey;
+
 DISCORD_EXPORT void NikDiscord_Initialize(const char* pInApplicationIdString,
                                           const char* pInOptionalSteamIdString);
 
@@ -133,7 +152,7 @@ DISCORD_EXPORT void NikDiscord_CommitPresence(int inDoClearPresence);
 
 DISCORD_EXPORT int NikDiscord_PopEvent(void);
 
-DISCORD_EXPORT const char* NikDiscord_GetEventKey(const char* pInNameUtf8String,
+DISCORD_EXPORT const char* NikDiscord_GetEventKey(NikDiscord_EventKey inEventKey,
                                                   int* pOutStringSize);
 
 DISCORD_EXPORT void NikDiscord_Respond(const char* pInUserIdUtf8String, int inReply);

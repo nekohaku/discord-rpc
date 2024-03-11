@@ -544,10 +544,13 @@ struct NikDiscord_State : public DiscordRichPresence {
 static NikDiscord_State g_NikState{};
 static bool g_IsInitialized{false};
 
-static std::mutex g_ApiMutex{};
-#define api_lock() std::lock_guard<std::mutex> guard_(g_ApiMutex)
+// static std::mutex g_ApiMutex{};
+//#define api_lock() std::lock_guard<std::mutex> guard_(g_ApiMutex)
+#define api_lock()    \
+    do { /* no-op! */ \
+    } while (0)
 
-using NikDiscord_Event = std::unordered_map<std::string, std::string>;
+using NikDiscord_Event = std::unordered_map<int, std::string>;
 using NikDiscord_EventQueue = std::queue<NikDiscord_Event>;
 
 static NikDiscord_EventQueue g_EventQueue{};
@@ -556,56 +559,56 @@ static NikDiscord_Event g_CurrentEvent{};
 static void NikDiscord_OnReady(const DiscordUser* request)
 {
     NikDiscord_Event ev;
-    ev["type"] = "ready";
-    ev["userId"] = request->userId ? request->userId : "";
-    ev["username"] = request->username ? request->username : "";
-    ev["discriminator"] = request->discriminator ? request->discriminator : "";
-    ev["avatar"] = request->avatar ? request->avatar : "";
+    ev[kEventKey_Type] = "ready";
+    ev[kEventKey_UserId] = request->userId ? request->userId : "";
+    ev[kEventKey_Username] = request->username ? request->username : "";
+    ev[kEventKey_Discriminator] = request->discriminator ? request->discriminator : "";
+    ev[kEventKey_Avatar] = request->avatar ? request->avatar : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
 static void NikDiscord_OnDisconnected(int errorCode, const char* message)
 {
     NikDiscord_Event ev;
-    ev["type"] = "disconnected";
-    ev["errorCode"] = std::to_string(errorCode);
-    ev["message"] = message ? message : "";
+    ev[kEventKey_Type] = "disconnected";
+    ev[kEventKey_ErrorCode] = std::to_string(errorCode);
+    ev[kEventKey_Message] = message ? message : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
 static void NikDiscord_OnErrored(int errorCode, const char* message)
 {
     NikDiscord_Event ev;
-    ev["type"] = "errored";
-    ev["errorCode"] = std::to_string(errorCode);
-    ev["message"] = message ? message : "";
+    ev[kEventKey_Type] = "errored";
+    ev[kEventKey_ErrorCode] = std::to_string(errorCode);
+    ev[kEventKey_Message] = message ? message : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
 static void NikDiscord_OnJoinGame(const char* joinSecret)
 {
     NikDiscord_Event ev;
-    ev["type"] = "joinGame";
-    ev["joinSecret"] = joinSecret ? joinSecret : "";
+    ev[kEventKey_Type] = "joinGame";
+    ev[kEventKey_JoinSecret] = joinSecret ? joinSecret : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
 static void NikDiscord_OnSpectateGame(const char* spectateSecret)
 {
     NikDiscord_Event ev;
-    ev["type"] = "spectateGame";
-    ev["spectateSecret"] = spectateSecret ? spectateSecret : "";
+    ev[kEventKey_Type] = "spectateGame";
+    ev[kEventKey_SpectateSecret] = spectateSecret ? spectateSecret : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
 static void NikDiscord_OnJoinRequest(const DiscordUser* request)
 {
     NikDiscord_Event ev;
-    ev["type"] = "joinRequest";
-    ev["userId"] = request->userId ? request->userId : "";
-    ev["username"] = request->username ? request->username : "";
-    ev["discriminator"] = request->discriminator ? request->discriminator : "";
-    ev["avatar"] = request->avatar ? request->avatar : "";
+    ev[kEventKey_Type] = "joinRequest";
+    ev[kEventKey_UserId] = request->userId ? request->userId : "";
+    ev[kEventKey_Username] = request->username ? request->username : "";
+    ev[kEventKey_Discriminator] = request->discriminator ? request->discriminator : "";
+    ev[kEventKey_Avatar] = request->avatar ? request->avatar : "";
     g_EventQueue.emplace(std::move(ev));
 }
 
@@ -801,7 +804,7 @@ extern "C" DISCORD_EXPORT int NikDiscord_PopEvent(void)
     return 0;
 }
 
-extern "C" DISCORD_EXPORT const char* NikDiscord_GetEventKey(const char* pInNameUtf8String,
+extern "C" DISCORD_EXPORT const char* NikDiscord_GetEventKey(NikDiscord_EventKey inEventKey,
                                                              int* pOutStringSize)
 {
     api_lock();
@@ -810,7 +813,7 @@ extern "C" DISCORD_EXPORT const char* NikDiscord_GetEventKey(const char* pInName
     const char* strPtr = nullptr;
 
     if (g_IsInitialized) {
-        const auto iter = g_CurrentEvent.find(pInNameUtf8String);
+        const auto iter = g_CurrentEvent.find(inEventKey);
         if (iter != g_CurrentEvent.end()) {
             strPtr = iter->second.c_str();
             strSize = static_cast<int>(iter->second.size());
